@@ -1,0 +1,25 @@
+services:  
+  app1:
+    container_name: app1
+    image: nginx:alpine
+    environment:
+      - VIRTUAL_HOST=app1.${TOP_LEVEL_DOMAIN}
+      - LETSENCRYPT_HOST=app1.${TOP_LEVEL_DOMAIN}
+      - LETSENCRYPT_EMAIL=admin@app1.${TOP_LEVEL_DOMAIN}
+    networks:
+      - step-ca-network
+
+  app2:
+    container_name: app2
+    image: nginx:alpine
+    environment:
+      - VIRTUAL_HOST=app2.${TOP_LEVEL_DOMAIN}
+      - LETSENCRYPT_HOST=app2.${TOP_LEVEL_DOMAIN}
+      - LETSENCRYPT_EMAIL=admin@app2.${TOP_LEVEL_DOMAIN}
+      - STEP_CA_TRUST=true
+    networks:
+      - step-ca-network
+
+networks:
+  step-ca-network:
+    external: true
