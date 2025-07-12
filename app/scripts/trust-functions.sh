@@ -102,7 +102,7 @@ install_ca_packages() {
     
     log_trust "Running: $install_cmd"
     
-    if docker exec "$container_id" sh -c "$install_cmd" >/dev/null 2>&1; then
+    if docker exec --user root "$container_id" sh -c "$install_cmd" >/dev/null 2>&1; then
         log_trust "Successfully installed ca-certificates package"
         return 0
     else
@@ -128,7 +128,7 @@ copy_certificate_to_container() {
     log_trust "Copying certificate to $cert_dir in container $container_id"
     
     # Create certificate directory in container
-    if ! docker exec "$container_id" mkdir -p "$cert_dir" 2>/dev/null; then
+    if ! docker exec --user root "$container_id" mkdir -p "$cert_dir" 2>/dev/null; then
         log_trust "ERROR: Failed to create certificate directory"
         return 1
     fi
@@ -157,7 +157,7 @@ update_trust_store() {
     
     log_trust "Updating trust store with command: $update_cmd"
     
-    if docker exec "$container_id" sh -c "$update_cmd" >/dev/null 2>&1; then
+    if docker exec --user root "$container_id" sh -c "$update_cmd" >/dev/null 2>&1; then
         log_trust "Successfully updated trust store"
         return 0
     else
