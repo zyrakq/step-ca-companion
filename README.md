@@ -70,6 +70,7 @@ services:
     image: alpine:3.18
     environment:
       - STEP_CA_TRUST=true
+      - STEP_CA_TRUST_RESTART=true  # Restart after certificate installation
     command: |
       sh -c "
         apk add --no-cache curl &&
@@ -436,7 +437,8 @@ graph TB
 
 For containers that need trust certificates:
 
-- `STEP_CA_TRUST`: Set to `true` to install step-ca trust certificate
+- `STEP_CA_TRUST`: Set to `true` to install step-ca trust certificate bundle
+- `STEP_CA_TRUST_RESTART`: Set to `true` to restart container after certificate installation
 
 ## 🔍 Automatic step-ca Discovery
 
@@ -507,7 +509,32 @@ services:
   my-app:
     image: nginx:alpine
     environment:
-      STEP_CA_TRUST: "true"  # Enables automatic trust certificate installation
+      STEP_CA_TRUST: "true"         # Enables automatic trust certificate installation
+      STEP_CA_TRUST_RESTART: "true" # Restart container after certificate installation
+    networks:
+      - step-ca-network
+```
+
+### Certificate Bundle Details
+
+The trust certificate installation now includes both root and intermediate certificates:
+
+- **Root Certificate**: `/home/step/certs/root_ca.crt` from step-ca container
+- **Intermediate Certificate**: `/home/step/certs/intermediate_ca.crt` from step-ca container
+- **Bundle**: Combined certificate file containing both certificates for complete PKI trust chain
+
+### Container Restart Option
+
+Some applications may require a restart to properly load new trust certificates. Use `STEP_CA_TRUST_RESTART=true` to automatically restart the container after certificate installation:
+
+```yaml
+services:
+  # Application that needs restart after certificate installation
+  secure-app:
+    image: myapp:latest
+    environment:
+      STEP_CA_TRUST: "true"
+      STEP_CA_TRUST_RESTART: "true"  # Container will be restarted after certificate installation
     networks:
       - step-ca-network
 ```
@@ -529,8 +556,9 @@ services:
 3. **OS Detection**: Automatically detects container operating system
 4. **Certificate Retrieval**: Gets step-ca root and intermediate certificates bundle
 5. **Package Installation**: Installs `ca-certificates` package if needed
-6. **Trust Installation**: Copies certificate and updates trust store
-7. **Verification**: Tests HTTPS connectivity to step-ca
+6. **Trust Installation**: Copies certificate bundle and updates trust store
+7. **Container Restart**: Optionally restarts container if `STEP_CA_TRUST_RESTART=true`
+8. **Verification**: Tests HTTPS connectivity to step-ca
 
 ### Example: Microservices with Trust
 

@@ -352,6 +352,40 @@ verify_trust_installation() {
     fi
 }
 
+# Restart container after certificate installation
+restart_container_after_trust() {
+    local container_id="$1"
+    local container_name="$2"
+    
+    log_trust "Restarting container $container_name after certificate installation..."
+    
+    # Check if container is still running before restart
+    if ! is_container_running "$container_id"; then
+        log_trust "WARNING: Container $container_name is not running, skipping restart"
+        return 1
+    fi
+    
+    # Restart the container
+    if docker restart "$container_id" >/dev/null 2>&1; then
+        log_trust "Successfully restarted container $container_name"
+        
+        # Wait a moment for container to be ready after restart
+        sleep 2
+        
+        # Verify container is running after restart
+        if is_container_running "$container_id"; then
+            log_trust "Container $container_name is running after restart"
+            return 0
+        else
+            log_trust "WARNING: Container $container_name failed to start after restart"
+            return 1
+        fi
+    else
+        log_trust "ERROR: Failed to restart container $container_name"
+        return 1
+    fi
+}
+
 # Process trust installation for containers with STEP_CA_TRUST=true
 process_trust_containers() {
     log_trust "Processing trust certificate installation for containers..."

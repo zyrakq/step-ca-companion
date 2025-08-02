@@ -21,6 +21,17 @@ log "Processing trust certificate for container: {{$container.Name}} (ID: {{$con
 install_trust_certificate "{{$container.ID}}" "{{$container.Name}}"
 if [ $? -eq 0 ]; then
     log "Trust certificate successfully installed in container: {{$container.Name}}"
+    {{if $container.Env.STEP_CA_TRUST_RESTART}}
+    log "Container {{$container.Name}} has STEP_CA_TRUST_RESTART=true, restarting..."
+    restart_container_after_trust "{{$container.ID}}" "{{$container.Name}}"
+    if [ $? -eq 0 ]; then
+        log "Container {{$container.Name}} successfully restarted after certificate installation"
+    else
+        log "WARNING: Failed to restart container {{$container.Name}} after certificate installation"
+    fi
+    {{else}}
+    log "Container {{$container.Name}} does not require restart (STEP_CA_TRUST_RESTART not set)"
+    {{end}}
 else
     log "Failed to install trust certificate in container: {{$container.Name}}"
 fi
