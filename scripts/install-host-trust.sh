@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Host Trust Certificate Installation Script
-# Automatically installs step-ca intermediate certificate to host system
+# Automatically installs step-ca root and intermediate certificates to host system
 
 set -e
 
@@ -22,7 +22,7 @@ get_docker_context() {
 # Generate user-context-specific certificate name
 DOCKER_CONTEXT=$(get_docker_context)
 CERT_USER="${CERT_USER:-$(whoami)}"
-CERT_NAME="step-ca-intermediate-${CERT_USER}-${DOCKER_CONTEXT}"
+CERT_NAME="step-ca-bundle-${CERT_USER}-${DOCKER_CONTEXT}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -294,14 +294,60 @@ get_step_ca_certificate() {
     # Try to get certificate from step-ca container
     if docker exec "$STEP_CA_CONTAINER_NAME" cat /home/step/certs/intermediate_ca.crt > "$cert_file" 2>/dev/null; then
         if grep -q "BEGIN CERTIFICATE" "$cert_file"; then
-            log_success "Successfully retrieved step-ca certificate"
+            log_success "Successfully retrieved step-ca intermediate certificate"
             return 0
         else
-            log_error "Invalid certificate format"
+            log_error "Invalid intermediate certificate format"
             return 1
         fi
     else
-        log_error "Failed to retrieve certificate from step-ca container"
+        log_error "Failed to retrieve intermediate certificate from step-ca container"
+        return 1
+    fi
+}
+
+# Get step-ca root certificate
+get_step_ca_root_certificate() {
+    local cert_file="$1"
+    
+    log "Retrieving step-ca root certificate..."
+    
+    # Wait for step-ca to be ready first
+    wait_for_step_ca_ready
+    
+    # Try to get root certificate from step-ca container
+    if docker exec "$STEP_CA_CONTAINER_NAME" cat /home/step/certs/root_ca.crt > "$cert_file" 2>/dev/null; then
+        if grep -q "BEGIN CERTIFICATE" "$cert_file"; then
+            log_success "Successfully retrieved step-ca root certificate"
+            return 0
+        else
+            log_error "Invalid root certificate format"
+            return 1
+        fi
+    else
+        log_error "Failed to retrieve root certificate from step-ca container"
+        return 1
+    fi
+}
+
+# Create certificate bundle with both root and intermediate certificates
+create_certificate_bundle() {
+    local bundle_file="$1"
+    local root_cert="$2"
+    local intermediate_cert="$3"
+    
+    log "Creating certificate bundle with root and intermediate certificates..."
+    
+    # Combine root and intermediate certificates
+    # Root certificate first, then intermediate
+    cat "$root_cert" "$intermediate_cert" > "$bundle_file"
+    
+    if grep -q "BEGIN CERTIFICATE" "$bundle_file"; then
+        local cert_count=$(grep -c "BEGIN CERTIFICATE" "$bundle_file")
+        log_success "Successfully created certificate bundle with $cert_count certificates"
+        return 0
+    else
+        log_error "Failed to create certificate bundle"
         return 1
     fi
 }
@@ -319,7 +365,7 @@ install_certificate_to_host() {
         return 1
     fi
     
-    log "Installing certificate to host system..."
+    log "Installing certificate bundle to host system..."
     log "OS: $os_type"
     log "Certificate directory: $cert_dir"
     log "Update command: $update_cmd"
@@ -331,7 +377,7 @@ install_certificate_to_host() {
         sudo mkdir -p "$cert_dir"
     fi
     
-    # Copy certificate to system directory
+    # Copy certificate bundle to system directory
     local dest_file="$cert_dir/${CERT_NAME}.crt"
     if [ "$EUID" -eq 0 ]; then
         cp "$cert_file" "$dest_file"
@@ -341,7 +387,7 @@ install_certificate_to_host() {
         sudo chmod 644 "$dest_file"
     fi
     
-    log_success "Certificate copied to: $dest_file"
+    log_success "Certificate bundle copied to: $dest_file"
     
     # Update trust store
     log "Updating system trust store..."
@@ -421,17 +467,29 @@ main() {
     
     log_success "Detected OS: $os_type"
     
-    # Create temporary file for certificate
-    local temp_cert=$(mktemp)
-    trap "rm -f $temp_cert" EXIT
+    # Create temporary files for certificates
+    local temp_root_cert=$(mktemp)
+    local temp_intermediate_cert=$(mktemp)
+    local temp_bundle=$(mktemp)
+    trap "rm -f $temp_root_cert $temp_intermediate_cert $temp_bundle" EXIT
     
-    # Get certificate from step-ca
-    if ! get_step_ca_certificate "$temp_cert"; then
+    # Get root certificate from step-ca
+    if ! get_step_ca_root_certificate "$temp_root_cert"; then
         exit 1
     fi
     
-    # Install certificate to host
-    if ! install_certificate_to_host "$temp_cert" "$os_type"; then
+    # Get intermediate certificate from step-ca
+    if ! get_step_ca_certificate "$temp_intermediate_cert"; then
+        exit 1
+    fi
+    
+    # Create certificate bundle
+    if ! create_certificate_bundle "$temp_bundle" "$temp_root_cert" "$temp_intermediate_cert"; then
+        exit 1
+    fi
+    
+    # Install certificate bundle to host
+    if ! install_certificate_to_host "$temp_bundle" "$os_type"; then
         exit 1
     fi
     
@@ -446,7 +504,7 @@ main() {
 show_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Install step-ca intermediate certificate to host system trust store"
+    echo "Install step-ca root and intermediate certificates to host system trust store"
     echo "Supports multiple Docker contexts and users - certificates are named by user and context"
     echo ""
     echo "Environment Variables:"
@@ -460,10 +518,10 @@ show_usage() {
     echo "  docker context use production && $0        # Install for production context"
     echo ""
     echo "Multi-User Docker Context Support:"
-    echo "  - Certificates are named: step-ca-intermediate-<user>-<context>"
+    echo "  - Certificates are named: step-ca-bundle-<user>-<context>"
     echo "  - Multiple users and contexts can coexist without conflicts"
     echo "  - Switching contexts triggers automatic certificate updates (with systemd)"
-    echo "  - Examples: step-ca-intermediate-salazar-manjaro.crt, step-ca-intermediate-admin-production.crt"
+    echo "  - Examples: step-ca-bundle-salazar-manjaro.crt, step-ca-bundle-admin-production.crt"
     echo ""
     echo "Supported Operating Systems:"
     echo "  - Ubuntu/Debian"

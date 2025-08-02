@@ -74,14 +74,65 @@ get_step_ca_certificate() {
     # Try to get certificate from step-ca container (simple approach like in original)
     if docker exec "$step_ca_container_id" cat /home/step/certs/intermediate_ca.crt > "$cert_file" 2>/dev/null; then
         if grep -q "BEGIN CERTIFICATE" "$cert_file"; then
-            log_trust "Successfully retrieved step-ca certificate"
+            log_trust "Successfully retrieved step-ca intermediate certificate"
             return 0
         else
-            log_trust "ERROR: Invalid certificate format"
+            log_trust "ERROR: Invalid intermediate certificate format"
             return 1
         fi
     else
-        log_trust "ERROR: Failed to retrieve certificate from step-ca container"
+        log_trust "ERROR: Failed to retrieve intermediate certificate from step-ca container"
+        return 1
+    fi
+}
+
+# Get step-ca root certificate
+get_step_ca_root_certificate() {
+    local cert_file="$1"
+    
+    log_trust "Retrieving step-ca root certificate..."
+    
+    # Get step-ca container
+    local step_ca_container_id; step_ca_container_id=$(get_step_ca_container)
+    
+    if [[ -z "$step_ca_container_id" ]]; then
+        log_trust "ERROR: Could not find step-ca container"
+        return 1
+    fi
+    
+    # Try to get root certificate from step-ca container
+    if docker exec "$step_ca_container_id" cat /home/step/certs/root_ca.crt > "$cert_file" 2>/dev/null; then
+        if grep -q "BEGIN CERTIFICATE" "$cert_file"; then
+            log_trust "Successfully retrieved step-ca root certificate"
+            return 0
+        else
+            log_trust "ERROR: Invalid root certificate format"
+            return 1
+        fi
+    else
+        log_trust "ERROR: Failed to retrieve root certificate from step-ca container"
+        return 1
+    fi
+}
+
+# Create certificate bundle with both root and intermediate certificates
+create_certificate_bundle() {
+    local bundle_file="$1"
+    local root_cert="$2"
+    local intermediate_cert="$3"
+    
+    log_trust "Creating certificate bundle with root and intermediate certificates..."
+    
+    # Combine root and intermediate certificates
+    # Root certificate first, then intermediate
+    cat "$root_cert" "$intermediate_cert" > "$bundle_file"
+    
+    if grep -q "BEGIN CERTIFICATE" "$bundle_file"; then
+        local cert_count=$(grep -c "BEGIN CERTIFICATE" "$bundle_file")
+        log_trust "Successfully created certificate bundle with $cert_count certificates"
+        return 0
+    else
+        log_trust "ERROR: Failed to create certificate bundle"
         return 1
     fi
 }
@@ -125,7 +176,7 @@ copy_certificate_to_container() {
         return 1
     fi
     
-    log_trust "Copying certificate to $cert_dir in container $container_id"
+    log_trust "Copying certificate bundle to $cert_dir in container $container_id"
     
     # Create certificate directory in container
     if ! docker exec --user root "$container_id" mkdir -p "$cert_dir" 2>/dev/null; then
@@ -133,12 +184,12 @@ copy_certificate_to_container() {
         return 1
     fi
     
-    # Copy certificate to container
-    if docker cp "$cert_file" "$container_id:$cert_dir/step-ca-intermediate.crt"; then
-        log_trust "Successfully copied certificate to container"
+    # Copy certificate bundle to container
+    if docker cp "$cert_file" "$container_id:$cert_dir/step-ca-bundle.crt"; then
+        log_trust "Successfully copied certificate bundle to container"
         return 0
     else
-        log_trust "ERROR: Failed to copy certificate to container"
+        log_trust "ERROR: Failed to copy certificate bundle to container"
         return 1
     fi
 }
@@ -197,7 +248,7 @@ install_trust_certificate() {
     local container_id="$1"
     local container_name="$2"
     
-    log_trust "Installing trust certificate for container: $container_name ($container_id)"
+    log_trust "Installing trust certificates for container: $container_name ($container_id)"
     
     # Check if container is running
     if ! is_container_running "$container_id"; then
@@ -220,10 +271,28 @@ install_trust_certificate() {
     
     log_trust "Detected OS: $os_type for container $container_name"
     
-    # Get step-ca certificate
-    local temp_cert="/tmp/step-ca-intermediate-$container_id.crt"
-    if ! get_step_ca_certificate "$temp_cert"; then
-        log_trust "ERROR: Failed to get step-ca certificate"
+    # Get step-ca certificates
+    local temp_root_cert="/tmp/step-ca-root-$container_id.crt"
+    local temp_intermediate_cert="/tmp/step-ca-intermediate-$container_id.crt"
+    local temp_bundle="/tmp/step-ca-bundle-$container_id.crt"
+    
+    # Get root certificate
+    if ! get_step_ca_root_certificate "$temp_root_cert"; then
+        log_trust "ERROR: Failed to get step-ca root certificate"
+        return 1
+    fi
+    
+    # Get intermediate certificate
+    if ! get_step_ca_certificate "$temp_intermediate_cert"; then
+        log_trust "ERROR: Failed to get step-ca intermediate certificate"
+        rm -f "$temp_root_cert"
+        return 1
+    fi
+    
+    # Create certificate bundle
+    if ! create_certificate_bundle "$temp_bundle" "$temp_root_cert" "$temp_intermediate_cert"; then
+        log_trust "ERROR: Failed to create certificate bundle"
+        rm -f "$temp_root_cert" "$temp_intermediate_cert"
         return 1
     fi
     
@@ -232,22 +301,22 @@ install_trust_certificate() {
         log_trust "WARNING: Package installation failed, continuing anyway"
     fi
     
-    # Copy certificate to container
-    if ! copy_certificate_to_container "$container_id" "$temp_cert" "$os_type"; then
-        rm -f "$temp_cert"
+    # Copy certificate bundle to container
+    if ! copy_certificate_to_container "$container_id" "$temp_bundle" "$os_type"; then
+        rm -f "$temp_root_cert" "$temp_intermediate_cert" "$temp_bundle"
         return 1
     fi
     
     # Update trust store
     if ! update_trust_store "$container_id" "$os_type"; then
-        rm -f "$temp_cert"
+        rm -f "$temp_root_cert" "$temp_intermediate_cert" "$temp_bundle"
         return 1
     fi
     
     # Cleanup
-    rm -f "$temp_cert"
+    rm -f "$temp_root_cert" "$temp_intermediate_cert" "$temp_bundle"
     
-    log_trust "Successfully installed trust certificate for container $container_name"
+    log_trust "Successfully installed trust certificates for container $container_name"
     return 0
 }
 

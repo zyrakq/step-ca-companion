@@ -527,7 +527,7 @@ services:
 1. **Event Monitoring**: Monitors Docker container start events
 2. **Environment Check**: Detects containers with `STEP_CA_TRUST=true`
 3. **OS Detection**: Automatically detects container operating system
-4. **Certificate Retrieval**: Gets step-ca intermediate certificate
+4. **Certificate Retrieval**: Gets step-ca root and intermediate certificates bundle
 5. **Package Installation**: Installs `ca-certificates` package if needed
 6. **Trust Installation**: Copies certificate and updates trust store
 7. **Verification**: Tests HTTPS connectivity to step-ca
@@ -641,7 +641,7 @@ journalctl --user -u step-ca-monitor.service -f
 
 - **User-specific monitoring**: Monitors Docker contexts for current user only
 - **Multi-level monitoring**: Docker Events + Context Changes (10s) + Periodic Container Check (30s)
-- **User-context certificates**: Certificates named `step-ca-intermediate-<user>-<context>`
+- **User-context certificates**: Certificates named `step-ca-bundle-<user>-<context>`
 - **Group-based permissions**: Uses `step-ca-certs` group for secure certificate management
 - **Cross-platform support**: Works on Ubuntu, Debian, Arch Linux, Fedora, RHEL
 
@@ -663,7 +663,7 @@ docker context use production && ./scripts/install-host-trust.sh
 
 ### Multi-User Docker Context Support
 
-- **User-context naming**: Certificates are named `step-ca-intermediate-<user>-<context>`
+- **User-context naming**: Certificates are named `step-ca-bundle-<user>-<context>`
 - **Multiple users and contexts**: Different users and contexts can coexist without conflicts
 - **Automatic switching**: systemd integration detects context changes for all users
 - **User isolation**: Each user-context combination maintains its own certificate
