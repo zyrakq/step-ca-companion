@@ -18,10 +18,10 @@ RUN mkdir -p /app/scripts
 COPY scripts/ /app/scripts/
 COPY templates/ /app/templates/
 COPY docker-gen.cfg /app/
-COPY entrypoint.sh /app/
+COPY entrypoint-wrapper.sh /app/
 
 # Set execution permissions
-RUN chmod +x /app/scripts/*.sh /app/entrypoint.sh
+RUN chmod +x /app/scripts/*.sh /app/entrypoint-wrapper.sh
 
 # Environment variables for step-ca (optional)
 ENV STEP_CA_CONTAINER_NAME=""
@@ -30,4 +30,5 @@ ENV STEP_CA_FINGERPRINT=""
 ENV STEP_CA_BOOTSTRAP_TIMEOUT="300"
 
 # Set custom entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT [ "/bin/bash", "/app/entrypoint-wrapper.sh" ]
+CMD [ "/bin/bash", "/app/start.sh" ]

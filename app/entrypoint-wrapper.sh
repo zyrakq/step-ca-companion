@@ -46,7 +46,7 @@ main() {
     
     # Start original acme-companion entrypoint
     log "Starting original acme-companion..."
-    exec /app/start.sh "$@"
+    exec /app/entrypoint.sh "$@"
 }
 
 main "$@"
