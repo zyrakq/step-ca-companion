@@ -185,11 +185,44 @@ copy_certificate_to_container() {
     fi
     
     # Copy certificate bundle to container
-    if docker cp "$cert_file" "$container_id:$cert_dir/step-ca-bundle.crt"; then
-        log_trust "Successfully copied certificate bundle to container"
+    if ! docker cp "$cert_file" "$container_id:$cert_dir/step-ca-bundle.crt"; then
+        log_trust "ERROR: Failed to copy certificate bundle to container"
+        return 1
+    fi
+    
+    log_trust "Successfully copied certificate bundle to container"
+    
+    # Always install into the p11-kit trust anchors directory (/etc/pki/trust/anchors/)
+    # as well: rustls (via rustls-native-certs / p11-kit-aware runtimes) and some
+    # applications read anchors directly from this path regardless of the OS type.
+    if ! install_rustls_trust_anchor "$container_id" "$cert_file"; then
+        log_trust "WARNING: Failed to install bundle into /etc/pki/trust/anchors/ (rustls path)"
+        # Non-fatal: OS-specific trust store copy already succeeded
+    fi
+    
+    return 0
+}
+
+# Install certificate bundle into /etc/pki/trust/anchors/ (p11-kit / rustls path)
+install_rustls_trust_anchor() {
+    local container_id="$1"
+    local cert_file="$2"
+    local rustls_dir="/etc/pki/trust/anchors"
+    
+    log_trust "Installing certificate bundle into $rustls_dir in container $container_id"
+    
+    # Create the anchors directory with full hierarchy if missing
+    if ! docker exec --user root "$container_id" mkdir -p "$rustls_dir" 2>/dev/null; then
+        log_trust "ERROR: Failed to create $rustls_dir"
+        return 1
+    fi
+    
+    # Copy bundle into the anchors directory
+    if docker cp "$cert_file" "$container_id:$rustls_dir/step-ca-bundle.crt" 2>/dev/null; then
+        log_trust "Successfully installed bundle into $rustls_dir"
         return 0
     else
-        log_trust "ERROR: Failed to copy certificate bundle to container"
+        log_trust "ERROR: Failed to copy bundle into $rustls_dir"
         return 1
     fi
 }

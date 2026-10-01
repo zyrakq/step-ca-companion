@@ -549,6 +549,8 @@ services:
 | Fedora | `dnf` | `/etc/pki/ca-trust/source/anchors/` | `update-ca-trust` |
 | Arch Linux | `pacman` | `/etc/ca-certificates/trust-source/anchors/` | `trust extract-compat` |
 
+Additionally, for every OS the bundle is **always** also copied to `/etc/pki/trust/anchors/` (directory created with full hierarchy if missing). This ensures runtimes using rustls (e.g. `rustls-native-certs` / p11-kit-based apps) can pick up the certificates even when they read anchors directly from that path.
+
 ### How It Works
 
 1. **Event Monitoring**: Monitors Docker container start events
@@ -556,7 +558,7 @@ services:
 3. **OS Detection**: Automatically detects container operating system
 4. **Certificate Retrieval**: Gets step-ca root and intermediate certificates bundle
 5. **Package Installation**: Installs `ca-certificates` package if needed
-6. **Trust Installation**: Copies certificate bundle and updates trust store
+6. **Trust Installation**: Copies certificate bundle to the OS trust directory and to `/etc/pki/trust/anchors/` (for rustls/p11-kit compat), then updates trust store
 7. **Container Restart**: Optionally restarts container if `STEP_CA_TRUST_RESTART=true`
 8. **Verification**: Tests HTTPS connectivity to step-ca
 
