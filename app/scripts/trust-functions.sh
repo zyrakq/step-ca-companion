@@ -192,14 +192,6 @@ copy_certificate_to_container() {
     
     log_trust "Successfully copied certificate bundle to container"
     
-    # Always install into the p11-kit trust anchors directory (/etc/pki/trust/anchors/)
-    # as well: rustls (via rustls-native-certs / p11-kit-aware runtimes) and some
-    # applications read anchors directly from this path regardless of the OS type.
-    if ! install_rustls_trust_anchor "$container_id" "$cert_file"; then
-        log_trust "WARNING: Failed to install bundle into /etc/pki/trust/anchors/ (rustls path)"
-        # Non-fatal: OS-specific trust store copy already succeeded
-    fi
-    
     return 0
 }
 
@@ -297,17 +289,12 @@ install_trust_certificate() {
     
     # Detect OS
     local os_type=$(detect_container_os "$container_id")
-    if [ "$os_type" = "unknown" ]; then
-        log_trust "ERROR: Could not detect OS for container $container_name"
-        return 1
-    fi
-    
-    log_trust "Detected OS: $os_type for container $container_name"
     
     # Get step-ca certificates
     local temp_root_cert="/tmp/step-ca-root-$container_id.crt"
     local temp_intermediate_cert="/tmp/step-ca-intermediate-$container_id.crt"
     local temp_bundle="/tmp/step-ca-bundle-$container_id.crt"
+    local temp_cleanup_placeholder # nothing
     
     # Get root certificate
     if ! get_step_ca_root_certificate "$temp_root_cert"; then
@@ -328,6 +315,26 @@ install_trust_certificate() {
         rm -f "$temp_root_cert" "$temp_intermediate_cert"
         return 1
     fi
+    
+    # Always install the bundle into /etc/pki/trust/anchors/ first
+    # (p11-kit / rustls path). This works for every OS, including
+    # images without a recognized distro (rustls-based containers).
+    if ! install_rustls_trust_anchor "$container_id" "$temp_bundle"; then
+        log_trust "ERROR: Failed to install bundle into /etc/pki/trust/anchors/"
+        rm -f "$temp_root_cert" "$temp_intermediate_cert" "$temp_bundle"
+        return 1
+    fi
+    
+    # Unknown OS: skip the OS-specific trust store (nothing to update),
+    # but the rustls anchors above are already installed.
+    if [ "$os_type" = "unknown" ]; then
+        log_trust "WARNING: Could not detect OS for container $container_name, installing bundle only into /etc/pki/trust/anchors/"
+        rm -f "$temp_root_cert" "$temp_intermediate_cert" "$temp_bundle"
+        log_trust "Successfully installed trust certificates for container $container_name (rustls path only)"
+        return 0
+    fi
+    
+    log_trust "Detected OS: $os_type for container $container_name"
     
     # Install CA packages
     if ! install_ca_packages "$container_id" "$os_type"; then

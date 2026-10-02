@@ -18,8 +18,7 @@ log() {
 {{if $container.Env.STEP_CA_TRUST}}
 log "Installing trust certificate for container: {{$container.Name}} (ID: {{$container.ID}})"
 log "Processing trust certificate for container: {{$container.Name}} (ID: {{$container.ID}})"
-install_trust_certificate "{{$container.ID}}" "{{$container.Name}}"
-if [ $? -eq 0 ]; then
+if install_trust_certificate "{{$container.ID}}" "{{$container.Name}}"; then
     log "Trust certificate successfully installed in container: {{$container.Name}}"
     {{if $container.Env.STEP_CA_TRUST_RESTART}}
     log "Container {{$container.Name}} has STEP_CA_TRUST_RESTART=true, restarting..."

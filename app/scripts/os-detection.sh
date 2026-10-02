@@ -37,6 +37,9 @@ detect_container_os() {
         elif echo "$os_info" | grep -qi "arch"; then
             echo "arch"
             return 0
+        elif echo "$os_info" | grep -qi "suse"; then
+            echo "suse"
+            return 0
         fi
     fi
     
@@ -84,6 +87,9 @@ get_package_manager() {
         "arch")
             echo "pacman"
             ;;
+        "suse")
+            echo "zypper"
+            ;;
         *)
             echo "unknown"
             return 1
@@ -112,6 +118,9 @@ get_install_command() {
         "arch")
             echo "pacman -Sy --noconfirm $package"
             ;;
+        "suse")
+            echo "zypper install -y --no-confirm $package"
+            ;;
         *)
             echo ""
             return 1
@@ -133,6 +142,9 @@ get_cert_directory() {
         "arch")
             echo "/etc/ca-certificates/trust-source/anchors"
             ;;
+        "suse")
+            echo "/etc/pki/trust/anchors"
+            ;;
         *)
             echo ""
             return 1
@@ -153,6 +165,9 @@ get_trust_update_command() {
             ;;
         "arch")
             echo "trust extract-compat"
+            ;;
+        "suse")
+            echo "update-ca-certificates"
             ;;
         *)
             echo ""
